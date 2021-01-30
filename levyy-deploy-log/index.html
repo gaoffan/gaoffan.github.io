@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    
+    <title>前后端分离项目的部署 - Levyy | Nosa</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+    
+
+    
+
+    
+
+    
+
+    
+<link rel="stylesheet" href="/dist/build.css?v=1.9.0.css">
+
+
+    <script>
+        window.aomori = {
+            
+        }
+        window.aomori_logo_typed_animated = false
+        window.aomori_search_algolia = false
+    </script>
+
+<meta name="generator" content="Hexo 4.2.1"></head>
+
+<body>
+
+    <div class="container">
+    <header class="header">
+        <div class="header-type">
+            
+            <div class="header-type-inner">
+                
+                    <a class="header-type-title" href="/">Nosa</a>
+                
+    
+                
+            </div>
+        </div>
+        <div class="header-menu">
+            <div class="header-menu-inner">
+                
+                <a href="/">Home</a>
+                
+                <a href="/archives">Archives</a>
+                
+                <a href="/tags">Tags</a>
+                
+            </div>
+            <div class="header-menu-social">
+                
+    <a class="social" target="_blank" href="">
+        <box-icon type='' name=''></box-icon>
+    </a>
+
+    <a class="social" target="_blank" href="">
+        <box-icon type='' name=''></box-icon>
+    </a>
+
+            </div>
+        </div>
+
+        <div class="header-menu-mobile">
+            <div class="header-menu-mobile-inner" id="mobile-menu-open">
+                <i class="icon icon-menu"></i>
+            </div>
+        </div>
+    </header>
+
+    <div class="header-menu-mobile-menu">
+        <div class="header-menu-mobile-menu-bg"></div>
+        <div class="header-menu-mobile-menu-wrap">
+            <div class="header-menu-mobile-menu-inner">
+                <div class="header-menu-mobile-menu-close" id="mobile-menu-close">
+                    <i class="icon icon-cross"></i>
+                </div>
+                <div class="header-menu-mobile-menu-list">
+                    
+                    <a href="/">Home</a>
+                    
+                    <a href="/archives">Archives</a>
+                    
+                    <a href="/tags">Tags</a>
+                    
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+    <div class="container">
+        <div class="main">
+            <section class="inner">
+                <section class="inner-main">
+                    <div class="post">
+    <article id="post-ckkj6dyzf000400ng5ejy2y1t" class="article article-type-post" itemscope
+    itemprop="blogPost">
+
+    <div class="article-inner">
+
+        
+
+        
+        <header class="article-header">
+            
+  
+    <h1 class="article-title" itemprop="name">
+      前后端分离项目的部署 - Levyy
+    </h1>
+  
+
+        </header>
+        
+
+        <div class="article-more-info article-more-info-post hairline">
+
+            <div class="article-date">
+  <time datetime="2019-05-26T16:00:00.000Z" itemprop="datePublished">2019-05-27</time>
+</div>
+
+            
+
+            
+            <div class="article-tag">
+                <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Java/" rel="tag">Java</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Nginx/" rel="tag">Nginx</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Spring-Boot/" rel="tag">Spring Boot</a></li></ul>
+            </div>
+            
+
+            
+
+            
+        </div>
+
+        <div class="article-entry post-inner-html hairline" itemprop="articleBody">
+            <p>Levyy是最近写的一个提交电子版作业的平台。这个项目花了约3天时间基本写完，因为是第一次部署前后端分离的项目，所以写篇文章把部署过程记录下来。</p>
+<a id="more"></a>
+
+<p>Levyy的前端部分使用Vue+Vuetify，后端HomeworkUpload使用Spring Boot框架编写。</p>
+<p>之前测试的时候是部署到阿里云Ubuntu 18.04，因为一些关于备案的原因，所以最终上线时选择了Vultr的CentOS 7 VPS。</p>
+<h1 id="安装环境"><a href="#安装环境" class="headerlink" title="安装环境"></a>安装环境</h1><p>操作系统为CentOS 7。</p>
+<p>首先更新系统</p>
+<pre><code class="bash">yum update</code></pre>
+<p>之后安装JRE（Java 运行时环境），设置Java环境变量。</p>
+<pre><code class="bash">yum install java-11-openjdk-devel
+cat &gt; /etc/profile.d/java11.sh &lt;&lt;EOF
+export JAVA_HOME=$(dirname $(dirname $(readlink $(readlink $(which javac)))))
+export PATH=\$PATH:\$JAVA_HOME/bin
+export CLASSPATH=.:\$JAVA_HOME/jre/lib:\$JAVA_HOME/lib:\$JAVA_HOME/lib/tools.jar
+EOF
+source /etc/profile.d/java11.sh</code></pre>
+<p>确认安装：</p>
+<pre><code>java -version</code></pre><p>之后安装Tomcat9，考虑到之前踩过的坑，建议不要通过yum安装。</p>
+<pre><code class="bash">apt-get install nginx
+apt-get install tomcat9</code></pre>
+<pre><code>wget https://www-us.apache.org/dist/tomcat/tomcat-9/v9.0.20/bin/apache-tomcat-9.0.20.tar.gz
+tar xvf apache-tomcat-9.0.20.tar.gz -C /opt/tomcat --strip-components=1</code></pre><pre><code>firewall-cmd --zone=public --permanent --add-port=80/tcp
+firewall-cmd --reload
+systemctl start nginx
+systemctl enable nginx
+
+/usr/share/nginx/html/</code></pre><p>之后打开浏览器（80/8080），确认安装成功！</p>
+<p>当然，还有编译前端要用到的nodejs、npm等等</p>
+<h1 id="配置nginx"><a href="#配置nginx" class="headerlink" title="配置nginx"></a>配置nginx</h1><p>我们需要将nginx和Tomcat配合起来使用，因此需要使用nginx的反向代理将调用后端的请求转发到Tomcat（127.0.0.1:8080）上面。</p>
+<p>在Levyy中，后端的请求都放在/api/路径下面，所以可以通过正则表达式匹配把这些请求转发到Tomcat上。</p>
+<pre><code>    gzip on;
+
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_buffers 16 8k;
+    gzip_http_version 1.1;
+    gzip_min_length 256;    
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+</code></pre><pre><code>        location ^~ /homeworkupload/api/ {
+              proxy_pass http://127.0.0.1:8080;
+              proxy_redirect off;  
+              proxy_set_header HOST $host;
+              proxy_set_header X-Real-IP $remote_addr;  
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;  
+              client_max_body_size 20m;  
+              client_body_buffer_size 128k;  
+              proxy_connect_timeout 90;  
+              proxy_send_timeout 90;  
+              proxy_read_timeout 90;  
+              proxy_buffer_size 4k;  
+              proxy_buffers 4 32k;  
+              proxy_busy_buffers_size 64k;  
+              proxy_temp_file_write_size 64k;  
+         }
+
+        location / {
+            # First attempt to serve request as file, then
+            # as directory, then fall back to displaying a 404.
+            try_files $uri $uri/ @router;
+            index index.html;
+        }
+
+        location @router {
+            rewrite ^.*$ /index.html last;
+        }</code></pre><h1 id="配置后端"><a href="#配置后端" class="headerlink" title="配置后端"></a>配置后端</h1><p>在最初测试时，Levyy后端使用的是Spring Boot内置的Tomcat容器，打包成jar直接启动。但这种方式容易导致崩溃等问题，因此需要修改打包成war放入Tomcat当中。</p>
+<p>首先需要修改<code>HomeworkUploadApplication</code>里面的内容，使其能够支持打包后使用war启动。</p>
+<pre><code class="java">@SpringBootApplication
+public class HomeworkUploadApplication extends SpringBootServletInitializer {
+
+    // run with war
+    @Override
+    protected SpringApplicationBuilder configure(SpringApplicationBuilder application) {
+        return application.sources(HomeworkUploadApplication.class);
+    }
+    // run with jar
+    public static void main(String[] args) {
+        SpringApplication.run(HomeworkUploadApplication.class, args);
+    }
+}</code></pre>
+<p>接下来还要配置build.gradle（Levyy使用Gradle构建）：</p>
+<pre><code>// ...
+apply plugin: &#39;war&#39;
+// ...
+dependencies {
+    // ...
+    providedRuntime &#39;org.springframework.boot:spring-boot-starter-tomcat&#39;
+    // ...
+}</code></pre><p>之后执行build，成功生成war文件。</p>
+
+        </div>
+
+    </div>
+
+    
+
+    
+
+    
+  <div class="article-refer hairline">
+    <h3>文章参考文献</h3>
+    
+    <p>
+      <a target="_blank" rel="nofollow" href="https://www.howtoing.com/how-to-install-java-with-apt-on-ubuntu-18-04">如何在Ubuntu 18.04上用`apt`安装Java </a>
+    </p>
+    
+    <p>
+      <a target="_blank" rel="nofollow" href="https://docs.spring.io/spring-boot/docs/current/reference/htmlsingle/#howto-create-a-deployable-war-file">Create a Deployable War File</a>
+    </p>
+    
+  </div>
+  
+
+    
+<div class="article-copyright hairline">
+  <p>
+    本作品采用 <a rel="license noopener" href="http://creativecommons.org/licenses/by-nc-nd/4.0/" target="_blank">知识共享署名-非商业性使用-禁止演绎 4.0 国际许可协议</a> 进行许可。
+  </p>
+</div>
+
+
+    
+
+    
+<nav class="article-nav">
+  
+    <a href="/httpclient-timeout-waiting-for-connection-from-pool/" id="article-nav-newer" class="article-nav-link-wrap">
+      <div class="article-nav-caption">下一篇</div>
+      <div class="article-nav-title">
+        
+          记一次HttpClient连接池超时问题排查：Timeout waiting for connection from pool
+        
+      </div>
+    </a>
+  
+  
+</nav>
+
+
+    <section class="share">
+        <div class="share-title">分享</div>
+        <a class="share-item" target="_blank"
+            href="https://twitter.com/share?text=前后端分离项目的部署 - Levyy - Nosa&url=http://gaoffan.github.io/levyy-deploy-log/">
+            <box-icon type='logo' name='twitter'></box-icon>
+        </a>
+        <a class="share-item" target="_blank"
+            href="https://www.facebook.com/sharer.php?title=前后端分离项目的部署 - Levyy - Nosa&u=http://gaoffan.github.io/levyy-deploy-log/">
+            <box-icon name='facebook-square' type='logo' ></box-icon>
+        </a>
+        <!-- <a class="share-item" target="_blank"
+            href="https://service.weibo.com/share/share.php?title=前后端分离项目的部署 - Levyy - Nosa&url=http://gaoffan.github.io/levyy-deploy-log/&pic=">
+            <div class="n-icon n-icon-weibo"></div>
+        </a> -->
+    </section>
+
+</article>
+
+
+
+
+
+
+
+</div>
+                </section>
+            </section>
+
+             
+            <aside class="sidebar">
+            
+                
+
+
+<div class="widget" id="widget">
+    
+      
+  <div class="widget-wrap">
+    <div class="widget-inner">
+      <div class="toc post-toc-html"></div>
+    </div>
+  </div>
+
+    
+      
+  <div class="widget-wrap widget-cate">
+    <div class="widget-title"><span>Categories</span></div>
+    <div class="widget-inner">
+      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/Java/">Java</a></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget-wrap widget-tags">
+    <div class="widget-title"><span>Tags</span></div>
+    <div class="widget-inner">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/HttpClient/" rel="tag">HttpClient</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Java/" rel="tag">Java</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Nginx/" rel="tag">Nginx</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Optional/" rel="tag">Optional</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Sentry/" rel="tag">Sentry</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Spring-Boot/" rel="tag">Spring Boot</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Spring-Security/" rel="tag">Spring Security</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Tomcat/" rel="tag">Tomcat</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Vue/" rel="tag">Vue</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/WebSocket/" rel="tag">WebSocket</a></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget-wrap widget-recent-posts">
+    <div class="widget-title"><span>Recent Posts</span></div>
+    <div class="widget-inner">
+      <ul>
+        
+          <li>
+            <a href="/spring-security-oauth-sms-authentication/">Spring Security OAuth 自定义授权方式：手机验证码</a>
+          </li>
+        
+          <li>
+            <a href="/monitor-spring-boot-application-by-Sentry/">使用Sentry 监控你的Spring Boot应用</a>
+          </li>
+        
+          <li>
+            <a href="/java8-optional-in-action/">Java8:Optional - 解救分支地狱</a>
+          </li>
+        
+          <li>
+            <a href="/spring-boot-integrated-websocket/">Spring Boot 整合 Websocket</a>
+          </li>
+        
+          <li>
+            <a href="/httpclient-timeout-waiting-for-connection-from-pool/">记一次HttpClient连接池超时问题排查：Timeout waiting for connection from pool</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+    
+      
+  <div class="widget-wrap widget-archive">
+    <div class="widget-title"><span>Archive</span></div>
+    <div class="widget-inner">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/01/">2021</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/11/">2020</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">2019</a></li></ul>
+    </div>
+  </div>
+
+
+    
+</div>
+
+<div id="backtop"><i class="icon icon-arrow-up"></i></div>
+            </aside>
+        </div>
+    </div>
+
+    <footer class="footer">
+    <div class="footer-wave">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 320"><path fill="#3c4859" fill-opacity="1" d="M0,160L60,181.3C120,203,240,245,360,240C480,235,600,181,720,186.7C840,192,960,256,1080,261.3C1200,267,1320,213,1380,186.7L1440,160L1440,320L1380,320C1320,320,1200,320,1080,320C960,320,840,320,720,320C600,320,480,320,360,320C240,320,120,320,60,320L0,320Z"></path></svg>
+    </div>
+
+    <div class="footer-wrap">
+        <div class="footer-inner"> 
+            Nosa &copy; 2013 - 2021<br>
+            Powered By Hexo · Theme By <a href="https://github.com/lh1me/hexo-theme-aomori" target="_blank">Aomori</a>
+        </div>
+    </div>
+
+</footer>
+
+
+
+
+<script src="/dist/build.js?1.9.0.js"></script>
+
+
+<script src="/dist/custom.js?1.9.0.js"></script>
+
+
+
+
+
+
+
+
+
+</body>
+
+</html>

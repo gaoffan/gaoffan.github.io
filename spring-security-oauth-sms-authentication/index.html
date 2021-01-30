@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    
+    <title>Spring Security OAuth 自定义授权方式：手机验证码 | Nosa</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+    
+
+    
+
+    
+
+    
+
+    
+<link rel="stylesheet" href="/dist/build.css?v=1.9.0.css">
+
+
+    <script>
+        window.aomori = {
+            
+        }
+        window.aomori_logo_typed_animated = false
+        window.aomori_search_algolia = false
+    </script>
+
+<meta name="generator" content="Hexo 4.2.1"></head>
+
+<body>
+
+    <div class="container">
+    <header class="header">
+        <div class="header-type">
+            
+            <div class="header-type-inner">
+                
+                    <a class="header-type-title" href="/">Nosa</a>
+                
+    
+                
+            </div>
+        </div>
+        <div class="header-menu">
+            <div class="header-menu-inner">
+                
+                <a href="/">Home</a>
+                
+                <a href="/archives">Archives</a>
+                
+                <a href="/tags">Tags</a>
+                
+            </div>
+            <div class="header-menu-social">
+                
+    <a class="social" target="_blank" href="">
+        <box-icon type='' name=''></box-icon>
+    </a>
+
+    <a class="social" target="_blank" href="">
+        <box-icon type='' name=''></box-icon>
+    </a>
+
+            </div>
+        </div>
+
+        <div class="header-menu-mobile">
+            <div class="header-menu-mobile-inner" id="mobile-menu-open">
+                <i class="icon icon-menu"></i>
+            </div>
+        </div>
+    </header>
+
+    <div class="header-menu-mobile-menu">
+        <div class="header-menu-mobile-menu-bg"></div>
+        <div class="header-menu-mobile-menu-wrap">
+            <div class="header-menu-mobile-menu-inner">
+                <div class="header-menu-mobile-menu-close" id="mobile-menu-close">
+                    <i class="icon icon-cross"></i>
+                </div>
+                <div class="header-menu-mobile-menu-list">
+                    
+                    <a href="/">Home</a>
+                    
+                    <a href="/archives">Archives</a>
+                    
+                    <a href="/tags">Tags</a>
+                    
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+    <div class="container">
+        <div class="main">
+            <section class="inner">
+                <section class="inner-main">
+                    <div class="post">
+    <article id="post-ckkj6dyzm000a00ng8e22gsed" class="article article-type-post" itemscope
+    itemprop="blogPost">
+
+    <div class="article-inner">
+
+        
+
+        
+        <header class="article-header">
+            
+  
+    <h1 class="article-title" itemprop="name">
+      Spring Security OAuth 自定义授权方式：手机验证码
+    </h1>
+  
+
+        </header>
+        
+
+        <div class="article-more-info article-more-info-post hairline">
+
+            <div class="article-date">
+  <time datetime="2021-01-29T16:00:00.000Z" itemprop="datePublished">2021-01-30</time>
+</div>
+
+            
+            <div class="article-category">
+                <a class="article-category-link" href="/categories/Java/">Java</a>
+            </div>
+            
+
+            
+            <div class="article-tag">
+                <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Spring-Boot/" rel="tag">Spring Boot</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Spring-Security/" rel="tag">Spring Security</a></li></ul>
+            </div>
+            
+
+            
+
+            
+        </div>
+
+        <div class="article-entry post-inner-html hairline" itemprop="articleBody">
+            <p>Spring Security OAuth 默认提供OAuth2.0 的四大基本授权方式（authorization_code\implicit\password\client_credential），除此之外我们也能够自定义授权方式。</p>
+<a id="more"></a> 
+
+<p>先了解一下Spring Security OAuth提供的两个默认 Endpoints，一个是<code>AuthorizationEndpoint</code>，这个是仅用于授权码(authorization_code)和简化(implicit)模式的。另外一个是<code>TokenEndpoint</code>，用于OAuth2授权时下发Token，根据授予类型（GrantType）的不同而执行不同的验证方式。</p>
+<p>OAuth2协议这里就不做过多介绍了，比较重要的一点是理解认证中各个角色的作用，以及认证的目的（获取用户信息或是具备使用API的权限）。例如在authorization_code模式下，用户（User）在认证服务的网站上进行登录，网站跳转回第三方应用（Client），第三方应用通过Secret和Code换取Token后向资源服务请求用户信息；而在client_credential模式下，第三方应用通过Secret直接获得Token后可以直接利用其访问资源API。所以我们应该根据实际的情景选择适合的认证模式。</p>
+<p>对于手机验证码的认证模式，我们首先提出短信验证的通常需求：</p>
+<ul>
+<li>每发一次验证码只能尝试验证5次，防止暴力破解</li>
+<li>限制验证码发送频率，单个用户（这里简单使用手机号区分）1分钟1条，24小时x条</li>
+<li>限制验证码有效期，15分钟</li>
+</ul>
+<p>我们根据业务需求构造出对应的模型：</p>
+<pre><code class="java">@Data
+public class SmsVerificationModel {
+
+    /**
+     * 手机号
+     */
+    private String phoneNumber;
+
+    /**
+     * 验证码
+     */
+    private String captcha;
+
+    /**
+     * 本次验证码验证失败次数，防止暴力尝试
+     */
+    private Integer failCount;
+
+    /**
+     * 该user当日尝试次数，防止滥发短信
+     */
+    private Integer dailyCount;
+
+    /**
+     * 限制短信发送频率和实现验证码有效期
+     */
+    private Date lastSentTime;
+
+    /**
+     * 是否验证成功
+     */
+    private Boolean verified = false;
+
+}</code></pre>
+<p>我们预想的认证流程：</p>
+<p><img src="/images/spring-security-oauth-sms-authentication.png" alt=""></p>
+<p>接下来要对Spring Security OAuth进行定制，这里直接仿照一个比较相似的password模式，首先需要编写一个新的<code>TokenGranter</code>，处理sms类型下的TokenRequest，这个<code>SmsTokenGranter</code>会生成SmsAuthenticationToken，并将<code>AuthenticationToken</code>交由<code>SmsAuthenticationProvider</code>进行验证，验证成功后生成通过验证的<code>SmsAuthenticationToken</code>，完成Token的颁发。</p>
+<pre><code class="java">public class SmsTokenGranter extends AbstractTokenGranter {
+    private static final String GRANT_TYPE = &quot;sms&quot;;
+
+    private final AuthenticationManager authenticationManager;
+
+    public SmsTokenGranter(AuthenticationManager authenticationManager, AuthorizationServerTokenServices tokenServices,
+                           ClientDetailsService clientDetailsService, OAuth2RequestFactory requestFactory){
+        super(tokenServices, clientDetailsService, requestFactory, GRANT_TYPE);
+        this.authenticationManager = authenticationManager;
+    }
+
+    @Override
+    protected OAuth2Authentication getOAuth2Authentication(ClientDetails client, TokenRequest tokenRequest) {
+        Map&lt;String, String&gt; parameters = new LinkedHashMap&lt;&gt;(tokenRequest.getRequestParameters());
+        String phone = parameters.get(&quot;phone&quot;);
+        String code = parameters.get(&quot;code&quot;);
+
+        Authentication userAuth = new SmsAuthenticationToken(phone, code);
+        try {
+            userAuth = authenticationManager.authenticate(userAuth);
+        }
+        catch (AccountStatusException ase) {
+            throw new InvalidGrantException(ase.getMessage());
+        }
+        catch (BadCredentialsException e) {
+            throw new InvalidGrantException(e.getMessage());
+        }
+        if (userAuth == null || !userAuth.isAuthenticated()) {
+            throw new InvalidGrantException(&quot;Could not authenticate user: &quot; + username);
+        }
+
+        OAuth2Request storedOAuth2Request = getRequestFactory().createOAuth2Request(client, tokenRequest);
+        return new OAuth2Authentication(storedOAuth2Request, userAuth);
+    }
+}</code></pre>
+<p>对应的<code>SmsAuthenticationToken</code>，其中一个构造方法是认证后的。</p>
+<pre><code class="java">public class SmsAuthenticationToken extends AbstractAuthenticationToken {
+
+    private final Object principal;
+    private Object credentials;
+
+    public SmsAuthenticationToken(Object principal, Object credentials) {
+        super(null);
+        this.credentials = credentials;
+        this.principal = principal;
+    }
+
+    public SmsAuthenticationToken(Object principal, Object credentials,
+                                               Collection&lt;? extends GrantedAuthority&gt; authorities) {
+        super(authorities);
+        this.principal = principal;
+        this.credentials = credentials;
+        // 表示已经认证
+        super.setAuthenticated(true);
+    }
+        ...
+}</code></pre>
+<p><code>SmsAuthenticationProvider</code>是仿照<code>AbstractUserDetailsAuthenticationProvider</code>编写的，这里仅仅列出核心部分。</p>
+<pre><code class="java">public class SmsAuthenticationProvider implements AuthenticationProvider {
+
+    @Override
+    public Authentication authenticate(Authentication authentication)
+            throws AuthenticationException {
+      String username = authentication.getName();
+      UserDetails user = retrieveUser(username);
+
+      preAuthenticationChecks.check(user);
+      String phoneNumber = authentication.getPrincipal().toString();
+      String code = authentication.getCredentials().toString();
+      // 尝试从Redis中取出Model
+      SmsVerificationModel verificationModel =
+                Optional.ofNullable(
+                        redisService.get(SMS_REDIS_PREFIX + phoneNumber, SmsVerificationModel.class))
+                .orElseThrow(() -&gt; new BusinessException(OAuthError.SMS_VERIFY_BEFORE_SEND));
+            // 判断短信验证次数
+      Optional.of(verificationModel).filter(x -&gt; x.getFailCount() &lt; SMS_VERIFY_FAIL_MAX_TIMES)
+                .orElseThrow(() -&gt; new BusinessException(OAuthError.SMS_VERIFY_COUNT_EXCEED));
+
+      Optional.of(verificationModel).map(SmsVerificationModel::getLastSentTime)
+                // 验证码发送15分钟内有效，等价于发送时间加上15分钟晚于当下
+                .filter(x -&gt; DateUtils.addMinutes(x,15).after(new Date()))
+                .orElseThrow(() -&gt; new BusinessException(OAuthError.SMS_CODE_EXPIRED));
+
+      verificationModel.setVerified(Objects.equals(code, verificationModel.getCaptcha()));
+      verificationModel.setFailCount(verificationModel.getFailCount() + 1);
+
+      redisService.set(SMS_REDIS_PREFIX + phoneNumber, verificationModel, 1, TimeUnit.DAYS);
+
+         if(!verificationModel.getVerified()){
+            throw new BusinessException(OAuthError.SmsCodeWrong);
+      }
+
+        postAuthenticationChecks.check(user);
+
+        return createSuccessAuthentication(user, authentication, user);
+    }
+      ...</code></pre>
+<p>接下来要通过配置启用我们定制的类，首先配置<code>AuthorizationServerEndpointsConfigurer</code>，添加上我们的TokenGranter，然后是<code>AuthenticationManagerBuilder</code>，我们添加我们的AuthenticationProvider。</p>
+<pre><code class="java">@Configuration
+@EnableAuthorizationServer
+public class OAuth2Config extends AuthorizationServerConfigurerAdapter {
+
+    @Override
+    public void configure(AuthorizationServerSecurityConfigurer security) throws Exception {
+        security
+                .passwordEncoder(passwordEncoder)
+                .checkTokenAccess(&quot;isAuthenticated()&quot;)
+                .tokenKeyAccess(&quot;permitAll()&quot;)
+                // 允许使用Query字段验证客户端，即client_id/client_secret 能够放在查询参数中
+                .allowFormAuthenticationForClients();
+    }
+
+    @Override
+    public void configure(AuthorizationServerEndpointsConfigurer endpoints) throws Exception {
+
+        endpoints.authenticationManager(authenticationManager)
+                .userDetailsService(userDetailsService)
+                .tokenStore(tokenStore);
+        List&lt;TokenGranter&gt; tokenGranters = new ArrayList&lt;&gt;();
+
+        tokenGranters.add(new AuthorizationCodeTokenGranter(endpoints.getTokenServices(), endpoints.getAuthorizationCodeServices(), clientDetailsService,
+                endpoints.getOAuth2RequestFactory()));
+                ...
+        tokenGranters.add(new SmsTokenGranter(authenticationManager, endpoints.getTokenServices(),
+                clientDetailsService, endpoints.getOAuth2RequestFactory()));
+
+        endpoints.tokenGranter(new CompositeTokenGranter(tokenGranters));
+    }
+
+}</code></pre>
+<pre><code class="java">@EnableWebSecurity
+@Configuration
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+        ...
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) {
+        auth.authenticationProvider(daoAuthenticationProvider());
+    }
+
+    @Bean
+    public AuthenticationProvider smsAuthenticationProvider(){
+        SmsAuthenticationProvider smsAuthenticationProvider = new SmsAuthenticationProvider();
+        smsAuthenticationProvider.setUserDetailsService(userDetailsService);
+        smsAuthenticationProvider.setSmsAuthService(smsAuthService);
+        return smsAuthenticationProvider;
+    }
+}</code></pre>
+<p>那么短信验证码授权的部分就到这里了，最后还有一个发送短信的接口，这里就不展示了。</p>
+<p>最后测试一下，curl –location –request POST ‘<a href="http://localhost:8080/oauth/token?grant_type=sms&amp;client_id=XXX&amp;phone=手机号&amp;code=验证码&#39;，成功。" target="_blank" rel="noopener">http://localhost:8080/oauth/token?grant_type=sms&amp;client_id=XXX&amp;phone=手机号&amp;code=验证码&#39;，成功。</a></p>
+<pre><code class="json">{
+    &quot;access_token&quot;: &quot;39bafa9a-7e5b-4ba4-9eda-e307ac98aad1&quot;,
+    &quot;token_type&quot;: &quot;bearer&quot;,
+    &quot;expires_in&quot;: 3599,
+    &quot;scope&quot;: &quot;ALL&quot;
+}</code></pre>
+
+        </div>
+
+    </div>
+
+    
+
+    
+
+    
+
+    
+<div class="article-copyright hairline">
+  <p>
+    本作品采用 <a rel="license noopener" href="http://creativecommons.org/licenses/by-nc-nd/4.0/" target="_blank">知识共享署名-非商业性使用-禁止演绎 4.0 国际许可协议</a> 进行许可。
+  </p>
+</div>
+
+
+    
+
+    
+<nav class="article-nav">
+  
+  
+    <a href="/monitor-spring-boot-application-by-Sentry/" id="article-nav-older" class="article-nav-link-wrap">
+      <div class="article-nav-caption">上一篇</div>
+      <div class="article-nav-title">使用Sentry 监控你的Spring Boot应用</div>
+    </a>
+  
+</nav>
+
+
+    <section class="share">
+        <div class="share-title">分享</div>
+        <a class="share-item" target="_blank"
+            href="https://twitter.com/share?text=Spring Security OAuth 自定义授权方式：手机验证码 - Nosa&url=http://gaoffan.github.io/spring-security-oauth-sms-authentication/">
+            <box-icon type='logo' name='twitter'></box-icon>
+        </a>
+        <a class="share-item" target="_blank"
+            href="https://www.facebook.com/sharer.php?title=Spring Security OAuth 自定义授权方式：手机验证码 - Nosa&u=http://gaoffan.github.io/spring-security-oauth-sms-authentication/">
+            <box-icon name='facebook-square' type='logo' ></box-icon>
+        </a>
+        <!-- <a class="share-item" target="_blank"
+            href="https://service.weibo.com/share/share.php?title=Spring Security OAuth 自定义授权方式：手机验证码 - Nosa&url=http://gaoffan.github.io/spring-security-oauth-sms-authentication/&pic=">
+            <div class="n-icon n-icon-weibo"></div>
+        </a> -->
+    </section>
+
+</article>
+
+
+
+
+
+
+
+</div>
+                </section>
+            </section>
+
+             
+            <aside class="sidebar">
+            
+                
+
+
+<div class="widget" id="widget">
+    
+      
+  <div class="widget-wrap">
+    <div class="widget-inner">
+      <div class="toc post-toc-html"></div>
+    </div>
+  </div>
+
+    
+      
+  <div class="widget-wrap widget-cate">
+    <div class="widget-title"><span>Categories</span></div>
+    <div class="widget-inner">
+      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/Java/">Java</a></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget-wrap widget-tags">
+    <div class="widget-title"><span>Tags</span></div>
+    <div class="widget-inner">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/HttpClient/" rel="tag">HttpClient</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Java/" rel="tag">Java</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Nginx/" rel="tag">Nginx</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Optional/" rel="tag">Optional</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Sentry/" rel="tag">Sentry</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Spring-Boot/" rel="tag">Spring Boot</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Spring-Security/" rel="tag">Spring Security</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Tomcat/" rel="tag">Tomcat</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Vue/" rel="tag">Vue</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/WebSocket/" rel="tag">WebSocket</a></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget-wrap widget-recent-posts">
+    <div class="widget-title"><span>Recent Posts</span></div>
+    <div class="widget-inner">
+      <ul>
+        
+          <li>
+            <a href="/spring-security-oauth-sms-authentication/">Spring Security OAuth 自定义授权方式：手机验证码</a>
+          </li>
+        
+          <li>
+            <a href="/monitor-spring-boot-application-by-Sentry/">使用Sentry 监控你的Spring Boot应用</a>
+          </li>
+        
+          <li>
+            <a href="/java8-optional-in-action/">Java8:Optional - 解救分支地狱</a>
+          </li>
+        
+          <li>
+            <a href="/spring-boot-integrated-websocket/">Spring Boot 整合 Websocket</a>
+          </li>
+        
+          <li>
+            <a href="/httpclient-timeout-waiting-for-connection-from-pool/">记一次HttpClient连接池超时问题排查：Timeout waiting for connection from pool</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+    
+      
+  <div class="widget-wrap widget-archive">
+    <div class="widget-title"><span>Archive</span></div>
+    <div class="widget-inner">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/01/">2021</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/11/">2020</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">2019</a></li></ul>
+    </div>
+  </div>
+
+
+    
+</div>
+
+<div id="backtop"><i class="icon icon-arrow-up"></i></div>
+            </aside>
+        </div>
+    </div>
+
+    <footer class="footer">
+    <div class="footer-wave">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 320"><path fill="#3c4859" fill-opacity="1" d="M0,160L60,181.3C120,203,240,245,360,240C480,235,600,181,720,186.7C840,192,960,256,1080,261.3C1200,267,1320,213,1380,186.7L1440,160L1440,320L1380,320C1320,320,1200,320,1080,320C960,320,840,320,720,320C600,320,480,320,360,320C240,320,120,320,60,320L0,320Z"></path></svg>
+    </div>
+
+    <div class="footer-wrap">
+        <div class="footer-inner"> 
+            Nosa &copy; 2013 - 2021<br>
+            Powered By Hexo · Theme By <a href="https://github.com/lh1me/hexo-theme-aomori" target="_blank">Aomori</a>
+        </div>
+    </div>
+
+</footer>
+
+
+
+
+<script src="/dist/build.js?1.9.0.js"></script>
+
+
+<script src="/dist/custom.js?1.9.0.js"></script>
+
+
+
+
+
+
+
+
+
+</body>
+
+</html>

@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    
+    <title>记一次HttpClient连接池超时问题排查：Timeout waiting for connection from pool | Nosa</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+    
+
+    
+
+    
+
+    
+
+    
+<link rel="stylesheet" href="/dist/build.css?v=1.9.0.css">
+
+
+    <script>
+        window.aomori = {
+            
+        }
+        window.aomori_logo_typed_animated = false
+        window.aomori_search_algolia = false
+    </script>
+
+<meta name="generator" content="Hexo 4.2.1"></head>
+
+<body>
+
+    <div class="container">
+    <header class="header">
+        <div class="header-type">
+            
+            <div class="header-type-inner">
+                
+                    <a class="header-type-title" href="/">Nosa</a>
+                
+    
+                
+            </div>
+        </div>
+        <div class="header-menu">
+            <div class="header-menu-inner">
+                
+                <a href="/">Home</a>
+                
+                <a href="/archives">Archives</a>
+                
+                <a href="/tags">Tags</a>
+                
+            </div>
+            <div class="header-menu-social">
+                
+    <a class="social" target="_blank" href="">
+        <box-icon type='' name=''></box-icon>
+    </a>
+
+    <a class="social" target="_blank" href="">
+        <box-icon type='' name=''></box-icon>
+    </a>
+
+            </div>
+        </div>
+
+        <div class="header-menu-mobile">
+            <div class="header-menu-mobile-inner" id="mobile-menu-open">
+                <i class="icon icon-menu"></i>
+            </div>
+        </div>
+    </header>
+
+    <div class="header-menu-mobile-menu">
+        <div class="header-menu-mobile-menu-bg"></div>
+        <div class="header-menu-mobile-menu-wrap">
+            <div class="header-menu-mobile-menu-inner">
+                <div class="header-menu-mobile-menu-close" id="mobile-menu-close">
+                    <i class="icon icon-cross"></i>
+                </div>
+                <div class="header-menu-mobile-menu-list">
+                    
+                    <a href="/">Home</a>
+                    
+                    <a href="/archives">Archives</a>
+                    
+                    <a href="/tags">Tags</a>
+                    
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+    <div class="container">
+        <div class="main">
+            <section class="inner">
+                <section class="inner-main">
+                    <div class="post">
+    <article id="post-ckkj6dyz4000000ngfz6q04z7" class="article article-type-post" itemscope
+    itemprop="blogPost">
+
+    <div class="article-inner">
+
+        
+
+        
+        <header class="article-header">
+            
+  
+    <h1 class="article-title" itemprop="name">
+      记一次HttpClient连接池超时问题排查：Timeout waiting for connection from pool
+    </h1>
+  
+
+        </header>
+        
+
+        <div class="article-more-info article-more-info-post hairline">
+
+            <div class="article-date">
+  <time datetime="2020-04-30T16:00:00.000Z" itemprop="datePublished">2020-05-01</time>
+</div>
+
+            
+            <div class="article-category">
+                <a class="article-category-link" href="/categories/Java/">Java</a>
+            </div>
+            
+
+            
+            <div class="article-tag">
+                <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/HttpClient/" rel="tag">HttpClient</a></li></ul>
+            </div>
+            
+
+            
+
+            
+        </div>
+
+        <div class="article-entry post-inner-html hairline" itemprop="articleBody">
+            <p>记一次HttpClient连接池超时问题排查：Timeout waiting for connection from pool</p>
+<a id="more"></a> 
+
+<h2 id="情景"><a href="#情景" class="headerlink" title="情景"></a>情景</h2><p>后端部署了新的代码，在几分钟后似乎所有的爬取相关的服务均不可用。服务频繁报错提示：「连接超时: 当前过于拥挤」。</p>
+<h2 id="获取连接池状态"><a href="#获取连接池状态" class="headerlink" title="获取连接池状态"></a>获取连接池状态</h2><p>首先立即打开日志查看错误消息，显示：Timeout waiting for connection from pool ，字面意思是从连接池中等待超时。为了了解这个时候的连接池状态如何，在查找资料后，使用以下的代码在出现异常的同时打印当前连接池状态。</p>
+<pre><code class="java">for(HttpRoute route : customConnectionPool.getRoutes()){
+    logger.info(&quot;{} :: {}&quot;, route.getTargetHost().getHostName() ,customConnectionPool.getStats(route));
+}</code></pre>
+<h3 id="PoolStats"><a href="#PoolStats" class="headerlink" title="PoolStats"></a>PoolStats</h3><p>连接池每个路由（可以认为一个Host:IP为一个路由/Route）的状态由PoolStats这个类表示。这个类有四个字段用于表示该路由对应状态下的连接，每个字段对应一种状态。</p>
+<h4 id="leased"><a href="#leased" class="headerlink" title="leased"></a>leased</h4><p>“租用”，即表示当前正在被使用的连接。如果这个状态长期保持一个较高的数量，尤其是只增不减，应该要考虑到是连接用完后没有释放的问题了（后话）。</p>
+<h4 id="pending"><a href="#pending" class="headerlink" title="pending"></a>pending</h4><p>“等待”，表示有请求在等待连接池可用连接，等待超时时间可以在<code>RequestConfig.custom()</code> 中使用<code>setConnectionRequestTimeout</code>设置（单位为ms），超时后即抛出题示异常。</p>
+<h4 id="available"><a href="#available" class="headerlink" title="available"></a>available</h4><p>“可用”，表示空闲的持久连接。根据源码文档，该路由的当前总存在连接数=leased+available。</p>
+<h4 id="max"><a href="#max" class="headerlink" title="max"></a>max</h4><p>表示路由最大可以创建的连接数，这个数量取决于<code>PoolingHttpClientConnectionManager</code>的<code>setDefaultMaxPerRoute</code>值，或者是由<code>HttpClients.custom()</code>的<code>setMaxConnPerRoute</code>决定。</p>
+<h2 id="连接池的总大小（连接数量）的一个坑"><a href="#连接池的总大小（连接数量）的一个坑" class="headerlink" title="连接池的总大小（连接数量）的一个坑"></a>连接池的总大小（连接数量）的一个坑</h2><p>最初代码是这样写的：</p>
+<pre><code class="java">customConnectionPool = new PoolingHttpClientConnectionManager();
+customConnectionPool.setDefaultMaxPerRoute(1500);</code></pre>
+<p>看起来似乎没什么问题。因为最初我认为连接池的最大连接数至少是等于<code>DefaultMaxPerRoute</code>的。之后查看日志发现出现了大量处于<strong>pending</strong>状态的请求，表示在等待连接池空闲，说明确实发生了大量的阻塞。</p>
+<blockquote>
+<p>hostA[leased: 20; ==pending: 217==; available: 0; max: 1500]<br>hostB[leased: 0; ==pending: 15==; available: 0; max: 1500]<br>hostC[leased: 0; pending: 0; available: 0; max: 1500]<br>hostD[leased: 0; ==pending: 28==; available: 0; max: 1500]<br>hostE[leased: 0; ==pending: 388==; available: 0; max: 1500]</p>
+<p>…</p>
+</blockquote>
+<p>这里观察到==hostA[leased: 20==，说明问题可能出现在hostA上面，先尝试模拟获取一下连接池的最大连接数。</p>
+<pre><code class="java">public static void main(String[] args) {
+  PoolingHttpClientConnectionManager cm = new PoolingHttpClientConnectionManager();
+  cm.setDefaultMaxPerRoute(1500);
+  System.out.println(cm.getTotalStats());
+}</code></pre>
+<blockquote>
+<p>[leased: 0; pending: 0; available: 0; max: 20]</p>
+</blockquote>
+<p>答案是20。因此即使设置了<code>DefaultMaxPerRoute</code>，也需要使用<code>setMaxTotal</code>设置连接池最大连接数量。</p>
+<h2 id="及时释放掉连接"><a href="#及时释放掉连接" class="headerlink" title="及时释放掉连接"></a>及时释放掉连接</h2><p>既然连接池太小了，首先就是扩大连接池的MaxTotal，扩大连接池后也重现了连接的堆积。</p>
+<blockquote>
+<p>hostA ==[leased: 255==; pending: 0; available: 1; max: 5000]</p>
+</blockquote>
+<p>也确实修改了HostA爬取相关的代码，发现在修改的登录这一段，没有及时释放掉连接。</p>
+<p>于是立马使用<code>HttpClientUtils.closeQuietly(httpClient)</code>关闭连接，结果发现他把整个连接池给关了。。。</p>
+<p>好吧，应该使用的是HttpRequestBase的<code>releaseConnection()</code>来释放掉这个连接。</p>
+<p>再配合一下<code>HttpClientUtils.closeQuietly(httpResponse)</code>（注意不是httpClient，与<code>EntityUtils.consumeQuietly()</code>效果相同)把流给关了。</p>
+<p>加上这两句后确认问题得到了解决。</p>
+<h2 id="设置好超时时间"><a href="#设置好超时时间" class="headerlink" title="设置好超时时间"></a>设置好超时时间</h2><p>还有一个问题是，为何只有某个服务（hostC）在报错呢。查看日志，发现该服务报错时的耗时与setConnectionRequestTimeout的数值相当。看了一下<code>RequestConfig</code>的设置，发现默认情况下三个超时值都是-1，也就是永不超时。</p>
+<pre><code class="java">RequestConfig requestConfig = RequestConfig.custom()
+                .setConnectTimeout(5000)
+                .setConnectionRequestTimeout(1000)
+                .setSocketTimeout(8000)
+                .build();</code></pre>
+<p>setConnectionRequestTimeout设置从连接池中取出连接的时限，设置这个可以防止产生大量处于等待状态下的连接阻塞整个后端。</p>
+<p>setConnectTimeout设置向服务器发起连接的超时时间。</p>
+<p>setSocketTimeout设置从服务器获取响应数据的超时时间。</p>
+<p>最好还是设置一下各种服务的爬取时间吧。</p>
+<h2 id="开个线程来关闭无用连接"><a href="#开个线程来关闭无用连接" class="headerlink" title="开个线程来关闭无用连接"></a>开个线程来关闭无用连接</h2><p>遇到这个问题，通常大家都这么想：能不能开个线程，定时把无用的连接给关掉呢。搜索了一些资料后，发现有人确实手写了个线程，不过这部分其实并不需要自己写。</p>
+<p>在配置HttpClient的时候，使用<code>.evictExpiredConnections()</code>可以配置一个线程自动关闭过期的连接，使用<code>.evictIdleConnections(...)</code>可以配置自动关闭空闲超过指定时限的连接，看一下源码：</p>
+<pre><code class="java">            if (evictExpiredConnections || evictIdleConnections) {
+                final IdleConnectionEvictor connectionEvictor = new IdleConnectionEvictor(cm,
+                        maxIdleTime &gt; 0 ? maxIdleTime : 10, maxIdleTimeUnit != null ? maxIdleTimeUnit : TimeUnit.SECONDS,
+                        maxIdleTime, maxIdleTimeUnit);
+                closeablesCopy.add(new Closeable() {
+
+                    @Override
+                    public void close() throws IOException {
+                        connectionEvictor.shutdown();
+                        try {
+                            connectionEvictor.awaitTermination(1L, TimeUnit.SECONDS);
+                        } catch (final InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+
+                });
+                connectionEvictor.start();
+            }</code></pre>
+<p>默认每10秒执行一次，在connectionEvictor里面具体干了什么呢：</p>
+<pre><code class="java">this.thread = this.threadFactory.newThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    while (!Thread.currentThread().isInterrupted()) {
+                        Thread.sleep(sleepTimeMs);
+                        connectionManager.closeExpiredConnections();
+                        if (maxIdleTimeMs &gt; 0) {
+                            connectionManager.closeIdleConnections(maxIdleTimeMs, TimeUnit.MILLISECONDS);
+                        }
+                    }
+                } catch (final Exception ex) {
+                    exception = ex;
+                }
+
+            }
+        });</code></pre>
+<p>关键就是这句<code>connectionManager.closeExpiredConnections()</code>和<code>connectionManager.closeIdleConnections(maxIdleTimeMs, TimeUnit.MILLISECONDS)</code>实现了关闭过期连接和空闲超过指定时限的连接。</p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2>
+        </div>
+
+    </div>
+
+    
+
+    
+
+    
+  <div class="article-refer hairline">
+    <h3>文章参考文献</h3>
+    
+    <p>
+      <a target="_blank" rel="nofollow" href="https://www.jianshu.com/p/85b554e989c1">HttpClient:Timeout waiting for connection from pool</a>
+    </p>
+    
+    <p>
+      <a target="_blank" rel="nofollow" href="https://www.codenong.com/jsecc34e182526/">httpclient连接池使用及简单分析</a>
+    </p>
+    
+    <p>
+      <a target="_blank" rel="nofollow" href="https://blog.csdn.net/QH_JAVA/article/details/78673960">httpclient连接池释放异常和多余资源</a>
+    </p>
+    
+  </div>
+  
+
+    
+<div class="article-copyright hairline">
+  <p>
+    本作品采用 <a rel="license noopener" href="http://creativecommons.org/licenses/by-nc-nd/4.0/" target="_blank">知识共享署名-非商业性使用-禁止演绎 4.0 国际许可协议</a> 进行许可。
+  </p>
+</div>
+
+
+    
+
+    
+<nav class="article-nav">
+  
+    <a href="/spring-boot-integrated-websocket/" id="article-nav-newer" class="article-nav-link-wrap">
+      <div class="article-nav-caption">下一篇</div>
+      <div class="article-nav-title">
+        
+          Spring Boot 整合 Websocket
+        
+      </div>
+    </a>
+  
+  
+    <a href="/levyy-deploy-log/" id="article-nav-older" class="article-nav-link-wrap">
+      <div class="article-nav-caption">上一篇</div>
+      <div class="article-nav-title">前后端分离项目的部署 - Levyy</div>
+    </a>
+  
+</nav>
+
+
+    <section class="share">
+        <div class="share-title">分享</div>
+        <a class="share-item" target="_blank"
+            href="https://twitter.com/share?text=记一次HttpClient连接池超时问题排查：Timeout waiting for connection from pool - Nosa&url=http://gaoffan.github.io/httpclient-timeout-waiting-for-connection-from-pool/">
+            <box-icon type='logo' name='twitter'></box-icon>
+        </a>
+        <a class="share-item" target="_blank"
+            href="https://www.facebook.com/sharer.php?title=记一次HttpClient连接池超时问题排查：Timeout waiting for connection from pool - Nosa&u=http://gaoffan.github.io/httpclient-timeout-waiting-for-connection-from-pool/">
+            <box-icon name='facebook-square' type='logo' ></box-icon>
+        </a>
+        <!-- <a class="share-item" target="_blank"
+            href="https://service.weibo.com/share/share.php?title=记一次HttpClient连接池超时问题排查：Timeout waiting for connection from pool - Nosa&url=http://gaoffan.github.io/httpclient-timeout-waiting-for-connection-from-pool/&pic=">
+            <div class="n-icon n-icon-weibo"></div>
+        </a> -->
+    </section>
+
+</article>
+
+
+
+
+
+
+
+</div>
+                </section>
+            </section>
+
+             
+            <aside class="sidebar">
+            
+                
+
+
+<div class="widget" id="widget">
+    
+      
+  <div class="widget-wrap">
+    <div class="widget-inner">
+      <div class="toc post-toc-html"></div>
+    </div>
+  </div>
+
+    
+      
+  <div class="widget-wrap widget-cate">
+    <div class="widget-title"><span>Categories</span></div>
+    <div class="widget-inner">
+      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/Java/">Java</a></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget-wrap widget-tags">
+    <div class="widget-title"><span>Tags</span></div>
+    <div class="widget-inner">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/HttpClient/" rel="tag">HttpClient</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Java/" rel="tag">Java</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Nginx/" rel="tag">Nginx</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Optional/" rel="tag">Optional</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Sentry/" rel="tag">Sentry</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Spring-Boot/" rel="tag">Spring Boot</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Spring-Security/" rel="tag">Spring Security</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Tomcat/" rel="tag">Tomcat</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Vue/" rel="tag">Vue</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/WebSocket/" rel="tag">WebSocket</a></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget-wrap widget-recent-posts">
+    <div class="widget-title"><span>Recent Posts</span></div>
+    <div class="widget-inner">
+      <ul>
+        
+          <li>
+            <a href="/spring-security-oauth-sms-authentication/">Spring Security OAuth 自定义授权方式：手机验证码</a>
+          </li>
+        
+          <li>
+            <a href="/monitor-spring-boot-application-by-Sentry/">使用Sentry 监控你的Spring Boot应用</a>
+          </li>
+        
+          <li>
+            <a href="/java8-optional-in-action/">Java8:Optional - 解救分支地狱</a>
+          </li>
+        
+          <li>
+            <a href="/spring-boot-integrated-websocket/">Spring Boot 整合 Websocket</a>
+          </li>
+        
+          <li>
+            <a href="/httpclient-timeout-waiting-for-connection-from-pool/">记一次HttpClient连接池超时问题排查：Timeout waiting for connection from pool</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+    
+      
+  <div class="widget-wrap widget-archive">
+    <div class="widget-title"><span>Archive</span></div>
+    <div class="widget-inner">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/01/">2021</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/11/">2020</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">2019</a></li></ul>
+    </div>
+  </div>
+
+
+    
+</div>
+
+<div id="backtop"><i class="icon icon-arrow-up"></i></div>
+            </aside>
+        </div>
+    </div>
+
+    <footer class="footer">
+    <div class="footer-wave">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 320"><path fill="#3c4859" fill-opacity="1" d="M0,160L60,181.3C120,203,240,245,360,240C480,235,600,181,720,186.7C840,192,960,256,1080,261.3C1200,267,1320,213,1380,186.7L1440,160L1440,320L1380,320C1320,320,1200,320,1080,320C960,320,840,320,720,320C600,320,480,320,360,320C240,320,120,320,60,320L0,320Z"></path></svg>
+    </div>
+
+    <div class="footer-wrap">
+        <div class="footer-inner"> 
+            Nosa &copy; 2013 - 2021<br>
+            Powered By Hexo · Theme By <a href="https://github.com/lh1me/hexo-theme-aomori" target="_blank">Aomori</a>
+        </div>
+    </div>
+
+</footer>
+
+
+
+
+<script src="/dist/build.js?1.9.0.js"></script>
+
+
+<script src="/dist/custom.js?1.9.0.js"></script>
+
+
+
+
+
+
+
+
+
+</body>
+
+</html>
